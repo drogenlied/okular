@@ -228,6 +228,7 @@ Q_OBJECT
         void slotContinuousToggled( bool );
         void slotSetMouseNormal();
         void slotSetMouseZoom();
+        void slotSetMouseTapeMeasure();
         void slotSetMouseMagnifier();
         void slotSetMouseSelect();
         void slotSetMouseTextSelect();

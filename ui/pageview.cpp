@@ -576,6 +576,16 @@ do { \
     mz->setActionGroup( d->mouseModeActionGroup );
     mz->setChecked( Okular::Settings::mouseMode() == Okular::Settings::EnumMouseMode::Zoom );
 
+    KAction * ms  = new KAction(KIcon( "code-variable" ), i18n("&Measure Tool"), this);
+    ac->addAction("mouse_measure", ms );
+    connect( ms, SIGNAL(triggered()), this, SLOT(slotSetMouseTapeMeasure()) );
+    ms->setIconText( i18nc( "Measure Tool", "Measure" ) );
+    ms->setCheckable( true );
+    //ms->setShortcut( Qt::CTRL + Qt::Key_2 );
+    ms->setActionGroup( d->mouseModeActionGroup );
+    ms->setChecked( Okular::Settings::mouseMode() == Okular::Settings::EnumMouseMode::Measure );
+
+
     KAction * aToggleChangeColors  = new KAction(i18n("&Toggle Change Colors"), this);
     ac->addAction("toggle_change_colors", aToggleChangeColors );
     connect( aToggleChangeColors, SIGNAL(triggered()), this, SLOT(slotToggleChangeColors()) );
@@ -4813,6 +4823,23 @@ void PageView::slotSetMouseZoom()
     Okular::Settings::setMouseMode( d->mouseMode );
     // change the text in messageWindow (and show it if hidden)
     d->messageWindow->display( i18n( "Select zooming area. Right-click to zoom out." ), QString(), PageViewMessage::Info, -1 );
+    // force hiding of annotator toolbar
+    if ( d->aToggleAnnotator && d->aToggleAnnotator->isChecked() )
+    {
+        d->aToggleAnnotator->trigger();
+        d->annotator->setHidingForced( true );
+    }
+    // force an update of the cursor
+    updateCursor();
+    Okular::Settings::self()->writeConfig();
+}
+
+void PageView::slotSetMouseTapeMeasure()
+{
+    d->mouseMode = Okular::Settings::EnumMouseMode::Measure;
+    Okular::Settings::setMouseMode( d->mouseMode );
+    // change the text in messageWindow (and show it if hidden)
+    d->messageWindow->display( i18n( "Select path to measure length." ), QString(), PageViewMessage::Info, -1 );
     // force hiding of annotator toolbar
     if ( d->aToggleAnnotator && d->aToggleAnnotator->isChecked() )
     {

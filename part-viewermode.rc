@@ -19,6 +19,7 @@
 <Menu name="menu_okular_part_viewer">
   <Action name="mouse_drag" group="viewer_menu_merge"/>
   <Action name="mouse_zoom" group="viewer_menu_merge"/>
+  <Action name="mouse_measure" group="viewer_menu_merge"/>
   <Separator group="viewer_menu_merge"/>
   <Action name="view_zoom_in" group="viewer_menu_merge"/>
   <Action name="view_zoom_out" group="viewer_menu_merge"/>
@@ -67,6 +68,7 @@
   <Separator/>
   <Action name="mouse_drag"/>
   <Action name="mouse_zoom"/>
+  <Action name="mouse_measure"/>
   <Action name="mouse_selecttools"/>
 </ToolBar>
 
