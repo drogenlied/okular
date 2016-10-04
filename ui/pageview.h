@@ -159,6 +159,11 @@ Q_OBJECT
         void selectionClear( const ClearMode mode = ClearAllSelection );
         void drawTableDividers(QPainter * screenPainter);
         void guessTableDividers();
+        // tape
+        void addTapePoint(const QPoint & pos);
+        void updateTape(const QPoint & pos);
+        void updateTape();
+        void resetTape();
         // update either text or rectangle selection
         void updateSelection( const QPoint & pos );
         // compute the zoom factor value for FitWidth and FitPage mode

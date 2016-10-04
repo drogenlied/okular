@@ -150,6 +150,13 @@ public:
     QList<TableSelectionPart> tableSelectionParts;
     bool tableDividersGuessed;
 
+    // tape measure
+    QVector<QPointF> tapeMeasureVec;
+    QPolygon tapeMeasureOnScreen;
+    QPoint tapeLastCursor;
+    QRect tapeUpdateRect;
+    bool tapeShiftPressed;
+
     // viewport move
     bool viewportMoveActive;
     QTime viewportMoveTime;
@@ -294,6 +301,7 @@ PageView::PageView( QWidget *parent, Okular::Document *document )
     d->mouseAnn = 0;
     d->mouseMode = Okular::Settings::mouseMode();
     d->tableDividersGuessed = false;
+    d->tapeShiftPressed = false;
     d->viewportMoveActive = false;
     d->lastSourceLocationViewportPageNumber = -1;
     d->lastSourceLocationViewportNormalizedX = 0.0;
@@ -1501,6 +1509,7 @@ void PageView::paintEvent(QPaintEvent *pe)
 
         // subdivide region into rects
         const QVector<QRect> &allRects = pe->region().rects();
+        kDebug() << allRects << endl;
         uint numRects = allRects.count();
 
         // preprocess rects area to see if it worths or not using subdivision
@@ -1641,6 +1650,29 @@ void PageView::paintEvent(QPaintEvent *pe)
                     }
                 }
                 drawTableDividers( &screenPainter );
+
+                // tape
+                if ( d->mouseMode == Okular::Settings::EnumMouseMode::Measure && d->tapeMeasureVec.count() > 0)
+                {
+                    if ( d->tapeMeasureVec.count() < 2 || d->tapeShiftPressed )
+                    {
+                        d->tapeMeasureOnScreen << d->tapeLastCursor;
+                        screenPainter.setPen( QPen(Qt::blue, 1) );
+                        screenPainter.drawPolyline( d->tapeMeasureOnScreen );
+                        screenPainter.setPen( selBlendColor );
+                        screenPainter.drawRect( d->tapeMeasureOnScreen.boundingRect() );
+                        kDebug() << "lol" <<  d->tapeMeasureOnScreen.boundingRect()  << endl;
+                        d->tapeMeasureOnScreen.pop_back();
+                    }
+                    else
+                    {
+                        screenPainter.setPen( QPen(Qt::blue, 1) );
+                        screenPainter.drawPolyline( d->tapeMeasureOnScreen );
+                        screenPainter.setPen( selBlendColor );
+                        screenPainter.drawRect( d->tapeMeasureOnScreen.boundingRect() );
+                        kDebug() << "lol" <<  d->tapeMeasureOnScreen.boundingRect()  << endl;
+                    }
+                }
                 // 3) Layer 1: give annotator painting control
                 if ( d->annotator && d->annotator->routePaints( contentsRect ) )
                     d->annotator->routePaint( &screenPainter, contentsRect );
@@ -1794,6 +1826,11 @@ void PageView::keyPressEvent( QKeyEvent * e )
             }
             break;
         case Qt::Key_Shift:
+            if ( d->mouseMode == Okular::Settings::EnumMouseMode::Measure )
+            {
+                d->tapeShiftPressed = true;
+                updateTape();
+            }
         case Qt::Key_Control:
             if ( d->autoScrollTimer )
             {
@@ -1826,10 +1863,24 @@ void PageView::keyReleaseEvent( QKeyEvent * e )
             return;
     }
 
-    if ( e->key() == Qt::Key_Escape && d->autoScrollTimer )
+    switch ( e->key() )
     {
-        d->scrollIncrement = 0;
-        d->autoScrollTimer->stop();
+        case Qt::Key_Escape:
+            if ( d->autoScrollTimer )
+            {
+                d->scrollIncrement = 0;
+                d->autoScrollTimer->stop();
+            }
+            break;
+        case Qt::Key_Shift:
+            if ( d->mouseMode == Okular::Settings::EnumMouseMode::Measure )
+            {
+                d->tapeShiftPressed = false;
+                updateTape();
+            }
+            break;
+        default:
+            break;
     }
 }
 
@@ -2058,6 +2109,10 @@ void PageView::mouseMoveEvent( QMouseEvent * e )
             }
             break;
 
+        case Okular::Settings::EnumMouseMode::Measure:
+            updateTape( eventPos );
+            break;
+
         case Okular::Settings::EnumMouseMode::Zoom:
         case Okular::Settings::EnumMouseMode::RectSelect:
         case Okular::Settings::EnumMouseMode::TableSelect:
@@ -2207,6 +2262,17 @@ void PageView::mousePressEvent( QMouseEvent * e )
                         popup.exec( e->globalPos() );
                     }
                 }
+            }
+            break;
+
+        case Okular::Settings::EnumMouseMode::Measure:     // add or remove measurement path point
+            if ( leftButton )
+            {
+                kDebug() << "Measure button 1 pressed" << endl;
+            }
+            else if ( rightButton )
+	        {
+                kDebug() << "Measure button 2 pressed" << endl;
             }
             break;
 
@@ -2543,7 +2609,28 @@ void PageView::mouseReleaseEvent( QMouseEvent * e )
                     emit rightClick( pageItem ? pageItem->page() : 0, e->globalPos() );
                 }
             }
-            }break;
+            }
+            break;
+
+        case Okular::Settings::EnumMouseMode::Measure:     // add or remove measurement path point
+            if ( leftButton )
+            {
+                PageViewItem * pageItem = pickItemOnPoint( eventPos.x(), eventPos.y() );
+                const QPoint pressPos = contentAreaPoint( mapFromGlobal( d->mousePressPos ) );
+                const PageViewItem * pageItemPressPos = pickItemOnPoint( pressPos.x(), pressPos.y() );
+                if ( leftButton && pageItem && pageItem == pageItemPressPos &&
+                    ( (d->mousePressPos - e->globalPos()).manhattanLength() < QApplication::startDragDistance() ) )
+                {
+                    kDebug() << "Tape click left" << endl;
+                    addTapePoint(eventPos);
+                }
+            }
+            else if ( rightButton )
+	        {
+                kDebug() << "Measure button 2 released" << endl;
+            }
+            break;
+
 
         case Okular::Settings::EnumMouseMode::Zoom:
             // if a selection rect has been defined, zoom into it
@@ -3558,6 +3645,62 @@ void PageView::updateItemSize( PageViewItem * item, int colWidth, int rowHeight 
 #endif
 }
 
+
+void PageView::addTapePoint( const QPoint & pos )
+{
+    PageViewItem * pageItem = pickItemOnPoint( pos.x(), pos.y() );
+    if (pageItem)
+    {
+        double pX = pageItem->absToPageX(pos.x());
+        double pY = pageItem->absToPageY(pos.y());
+        //const Page * p = pageItem->page();
+        
+        kDebug() << "Measure button 1 click "
+            << pageItem->page()->width()
+            << pageItem->page()->height()
+            << pX
+            << pY
+            << endl;
+
+        if ( d->tapeMeasureVec.count() >= 2 && !d->tapeShiftPressed )
+            {
+                kDebug() << "reset" << d->tapeMeasureVec << d->tapeMeasureOnScreen << endl;
+                resetTape();
+            }
+        d->tapeMeasureVec << QPointF(pX, pY);
+        d->tapeMeasureOnScreen << pos;
+        updateTape(pos);
+    }
+}
+
+void PageView::updateTape( const QPoint & pos )
+{
+    d->tapeLastCursor = pos;
+    if (d->tapeMeasureVec.count() > 0 && ( d->tapeMeasureVec.count() < 2 || d->tapeShiftPressed ) )
+    {
+        scrollPosIntoView( pos );
+        updateTape();
+    }
+}
+
+void PageView::updateTape()
+{
+    // make sure we update the last region we painted on and the new region
+    QRect updateRect = d->tapeUpdateRect;
+    d->tapeUpdateRect = d->tapeMeasureOnScreen.boundingRect();
+    d->tapeUpdateRect |= QRect(d->tapeLastCursor, QSize(2,2));
+    updateRect |= d->tapeUpdateRect;
+    updateRect.translate( -contentAreaPosition() );
+    kDebug() << updateRect << endl;
+    viewport()->update( updateRect );
+}
+
+void PageView::resetTape()
+{
+    d->tapeMeasureVec.clear();
+    d->tapeMeasureOnScreen.clear();
+}
+
 PageViewItem * PageView::pickItemOnPoint( int x, int y )
 {
     PageViewItem * item = 0;
@@ -3630,6 +3773,7 @@ void PageView::updateSelection( const QPoint & pos )
         updateRect |= d->mouseSelectionRect;
         updateRect.translate( -contentAreaPosition() );
         viewport()->update( updateRect.adjusted( -1, -1, 1, 1 ) );
+        kDebug() << "selection up" << updateRect << endl;
     }
     else if ( d->mouseTextSelecting)
     {
@@ -3959,6 +4103,8 @@ void PageView::updateCursor( const QPoint &p )
             setCursor( Qt::CrossCursor );
         else if ( d->mouseAnn )
             setCursor( Qt::ClosedHandCursor );
+        else if ( d->mouseMode == Okular::Settings::EnumMouseMode::Measure )
+            setCursor( Qt::CrossCursor );
         else if ( d->mouseMode == Okular::Settings::EnumMouseMode::Browse )
         {
             const Okular::ObjectRect * linkobj = pageItem->page()->objectRect( Okular::ObjectRect::Action, nX, nY, pageItem->uncroppedWidth(), pageItem->uncroppedHeight() );
@@ -4848,6 +4994,9 @@ void PageView::slotSetMouseTapeMeasure()
     }
     // force an update of the cursor
     updateCursor();
+    // remove old state
+    resetTape();
+    d->tapeShiftPressed = false;
     Okular::Settings::self()->writeConfig();
 }
 
