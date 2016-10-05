@@ -110,6 +110,11 @@ class OKULAR_EXPORT Page
         double ratio() const;
 
         /**
+         * Returns the real page size in inches if possible, otherwise an invalid QSizeF.
+         */
+        QSizeF realSizeInches( const QSizeF& dpi ) const;
+
+        /**
          * Returns the bounding box of the page content in normalized [0,1] coordinates,
          * in terms of the upright orientation (Rotation0).
          * If it has not been computed yet, returns the full page (i.e., (0, 0, 1, 1)).

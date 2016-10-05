@@ -164,6 +164,7 @@ Q_OBJECT
         void updateTape(const QPoint & pos);
         void updateTape();
         void resetTape();
+        double tapeLength();
         // update either text or rectangle selection
         void updateSelection( const QPoint & pos );
         // compute the zoom factor value for FitWidth and FitPage mode

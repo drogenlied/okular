@@ -176,6 +176,28 @@ double Page::ratio() const
     return d->m_height / d->m_width;
 }
 
+QSizeF Page::realSizeInches( const QSizeF& dpi ) const
+{
+    if (d->m_doc->m_generator)
+    {
+        switch (d->m_doc->m_generator->pagesSizeMetric())
+        {
+            case Generator::Points:
+                return QSizeF(width() / 72.0, height() / 72.0);
+
+            case Generator::Pixels:
+                if ( dpi.isValid() )
+                    return QSizeF(width() / dpi.width(), height() / dpi.height());
+                else
+                    return QSizeF();
+
+            case Generator::None:
+                return QSizeF();
+        }
+    }
+    return QSizeF();
+}
+
 NormalizedRect Page::boundingBox() const
 {
     return d->m_boundingBox;

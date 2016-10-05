@@ -80,6 +80,7 @@
 #include "core/audioplayer.h"
 #include "core/sourcereference.h"
 #include "core/tile.h"
+#include "core/utils.h"
 #include "settings.h"
 #include "settings_core.h"
 #include "url_utils.h"
@@ -156,6 +157,7 @@ public:
     QPoint tapeLastCursor;
     QRect tapeUpdateRect;
     bool tapeShiftPressed;
+    PageViewItem * tapePVItem;
 
     // viewport move
     bool viewportMoveActive;
@@ -302,6 +304,7 @@ PageView::PageView( QWidget *parent, Okular::Document *document )
     d->mouseMode = Okular::Settings::mouseMode();
     d->tableDividersGuessed = false;
     d->tapeShiftPressed = false;
+    d->tapePVItem = 0;
     d->viewportMoveActive = false;
     d->lastSourceLocationViewportPageNumber = -1;
     d->lastSourceLocationViewportNormalizedX = 0.0;
@@ -1509,7 +1512,6 @@ void PageView::paintEvent(QPaintEvent *pe)
 
         // subdivide region into rects
         const QVector<QRect> &allRects = pe->region().rects();
-        kDebug() << allRects << endl;
         uint numRects = allRects.count();
 
         // preprocess rects area to see if it worths or not using subdivision
@@ -1651,26 +1653,36 @@ void PageView::paintEvent(QPaintEvent *pe)
                 }
                 drawTableDividers( &screenPainter );
 
-                // tape
+                // n) draw measuring "tape"
                 if ( d->mouseMode == Okular::Settings::EnumMouseMode::Measure && d->tapeMeasureVec.count() > 0)
                 {
+                    QColor crossCol = QColor(Qt::black);
+                    crossCol.setAlphaF(0.5);
+                    screenPainter.setPen( QPen(crossCol, 1) );
+                    // crosshair at each vertex
+                    foreach ( const QPoint &pt, d->tapeMeasureOnScreen )
+                    {
+                        screenPainter.drawLine( pt + QPoint(0, 5), pt + QPoint(0, 15) );
+                        screenPainter.drawLine( pt + QPoint(0, -5), pt + QPoint(0, -15) );
+                        screenPainter.drawLine( pt + QPoint(5, 0), pt + QPoint(15, 0) );
+                        screenPainter.drawLine( pt + QPoint(-5, 0), pt + QPoint(-15, 0) );
+                    }
+                    QColor tapeCol = QColor(Qt::blue);
+                    tapeCol.setAlphaF(0.2);
+                    screenPainter.setPen( QPen(tapeCol, 2) );
                     if ( d->tapeMeasureVec.count() < 2 || d->tapeShiftPressed )
                     {
                         d->tapeMeasureOnScreen << d->tapeLastCursor;
-                        screenPainter.setPen( QPen(Qt::blue, 1) );
                         screenPainter.drawPolyline( d->tapeMeasureOnScreen );
-                        screenPainter.setPen( selBlendColor );
-                        screenPainter.drawRect( d->tapeMeasureOnScreen.boundingRect() );
-                        kDebug() << "lol" <<  d->tapeMeasureOnScreen.boundingRect()  << endl;
+                        //screenPainter.setPen( selBlendColor );
+                        //screenPainter.drawRect( d->tapeMeasureOnScreen.boundingRect() );
                         d->tapeMeasureOnScreen.pop_back();
                     }
                     else
                     {
-                        screenPainter.setPen( QPen(Qt::blue, 1) );
                         screenPainter.drawPolyline( d->tapeMeasureOnScreen );
-                        screenPainter.setPen( selBlendColor );
-                        screenPainter.drawRect( d->tapeMeasureOnScreen.boundingRect() );
-                        kDebug() << "lol" <<  d->tapeMeasureOnScreen.boundingRect()  << endl;
+                        //screenPainter.setPen( selBlendColor );
+                        //screenPainter.drawRect( d->tapeMeasureOnScreen.boundingRect() );
                     }
                 }
                 // 3) Layer 1: give annotator painting control
@@ -2265,7 +2277,7 @@ void PageView::mousePressEvent( QMouseEvent * e )
             }
             break;
 
-        case Okular::Settings::EnumMouseMode::Measure:     // add or remove measurement path point
+        /* case Okular::Settings::EnumMouseMode::Measure:     // add or remove measurement path point
             if ( leftButton )
             {
                 kDebug() << "Measure button 1 pressed" << endl;
@@ -2275,7 +2287,7 @@ void PageView::mousePressEvent( QMouseEvent * e )
                 kDebug() << "Measure button 2 pressed" << endl;
             }
             break;
-
+        */
         case Okular::Settings::EnumMouseMode::Zoom:     // set first corner of the zoom rect
             if ( leftButton )
                 selectionStart( eventPos, palette().color( QPalette::Active, QPalette::Highlight ), false );
@@ -2621,8 +2633,14 @@ void PageView::mouseReleaseEvent( QMouseEvent * e )
                 if ( leftButton && pageItem && pageItem == pageItemPressPos &&
                     ( (d->mousePressPos - e->globalPos()).manhattanLength() < QApplication::startDragDistance() ) )
                 {
-                    kDebug() << "Tape click left" << endl;
                     addTapePoint(eventPos);
+                    if ( d->tapeMeasureVec.count() >= 2 )
+                    {
+                        if (KGlobal::locale()->measureSystem() == KLocale::Imperial)
+                            d->messageWindow->display( i18n( "Path length: " ) + QString("%1in").arg( tapeLength()), QString(), PageViewMessage::Info, -1 );
+                        else
+                            d->messageWindow->display( i18n( "Path length: " ) + QString("%1mm").arg( tapeLength() * 25.4 ), QString(), PageViewMessage::Info, -1 );
+                    }
                 }
             }
             else if ( rightButton )
@@ -3653,23 +3671,27 @@ void PageView::addTapePoint( const QPoint & pos )
     {
         double pX = pageItem->absToPageX(pos.x());
         double pY = pageItem->absToPageY(pos.y());
-        //const Page * p = pageItem->page();
-        
+       /* 
         kDebug() << "Measure button 1 click "
             << pageItem->page()->width()
             << pageItem->page()->height()
             << pX
             << pY
             << endl;
-
+        */
         if ( d->tapeMeasureVec.count() >= 2 && !d->tapeShiftPressed )
             {
-                kDebug() << "reset" << d->tapeMeasureVec << d->tapeMeasureOnScreen << endl;
+                //kDebug() << "reset" << d->tapeMeasureVec << d->tapeMeasureOnScreen << endl;
                 resetTape();
             }
+        if ( d->tapePVItem != pageItem )
+        {
+            d->tapePVItem = pageItem;
+        }
         d->tapeMeasureVec << QPointF(pX, pY);
         d->tapeMeasureOnScreen << pos;
-        updateTape(pos);
+        d->tapeLastCursor = pos;
+        updateTape();
     }
 }
 
@@ -3691,14 +3713,34 @@ void PageView::updateTape()
     d->tapeUpdateRect |= QRect(d->tapeLastCursor, QSize(2,2));
     updateRect |= d->tapeUpdateRect;
     updateRect.translate( -contentAreaPosition() );
-    kDebug() << updateRect << endl;
-    viewport()->update( updateRect );
+    //kDebug() << updateRect << endl;
+    viewport()->update( updateRect.adjusted( -16, -16, 16, 16 ) );
 }
 
 void PageView::resetTape()
 {
     d->tapeMeasureVec.clear();
     d->tapeMeasureOnScreen.clear();
+    d->tapePVItem = 0;
+}
+
+double PageView::tapeLength()
+{
+    double length = 0;
+    if ( d->tapeMeasureVec.count() > 1 && d->tapePVItem )
+    {
+        const QSizeF dpi = Okular::Utils::realDpi(this);
+        const QSizeF pageSize = d->tapePVItem->page()->realSizeInches(dpi);
+        QPointF lastPt = d->tapeMeasureVec.first();
+
+        foreach(const QPointF & pt, d->tapeMeasureVec ) {
+            length +=  sqrt(
+                  pow( ( pt.x() - lastPt.x() ) * pageSize.width(), 2 )
+                + pow( ( pt.y() - lastPt.y() ) * pageSize.height(), 2 ) );
+            lastPt = pt;
+        }
+    }
+    return length;
 }
 
 PageViewItem * PageView::pickItemOnPoint( int x, int y )
@@ -4985,7 +5027,7 @@ void PageView::slotSetMouseTapeMeasure()
     d->mouseMode = Okular::Settings::EnumMouseMode::Measure;
     Okular::Settings::setMouseMode( d->mouseMode );
     // change the text in messageWindow (and show it if hidden)
-    d->messageWindow->display( i18n( "Select path to measure length." ), QString(), PageViewMessage::Info, -1 );
+    d->messageWindow->display( i18n( "Draw a path to measure length." ), QString(), PageViewMessage::Info, -1 );
     // force hiding of annotator toolbar
     if ( d->aToggleAnnotator && d->aToggleAnnotator->isChecked() )
     {
