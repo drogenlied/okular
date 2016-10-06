@@ -2625,30 +2625,28 @@ void PageView::mouseReleaseEvent( QMouseEvent * e )
             break;
 
         case Okular::Settings::EnumMouseMode::Measure:     // add or remove measurement path point
-            if ( leftButton )
+        {
+            PageViewItem * pageItem = pickItemOnPoint( eventPos.x(), eventPos.y() );
+            const QPoint pressPos = contentAreaPoint( mapFromGlobal( d->mousePressPos ) );
+            const PageViewItem * pageItemPressPos = pickItemOnPoint( pressPos.x(), pressPos.y() );
+            if ( ( leftButton || rightButton ) && pageItem && pageItem == pageItemPressPos &&
+                ( (d->mousePressPos - e->globalPos()).manhattanLength() < QApplication::startDragDistance() ) )
             {
-                PageViewItem * pageItem = pickItemOnPoint( eventPos.x(), eventPos.y() );
-                const QPoint pressPos = contentAreaPoint( mapFromGlobal( d->mousePressPos ) );
-                const PageViewItem * pageItemPressPos = pickItemOnPoint( pressPos.x(), pressPos.y() );
-                if ( leftButton && pageItem && pageItem == pageItemPressPos &&
-                    ( (d->mousePressPos - e->globalPos()).manhattanLength() < QApplication::startDragDistance() ) )
-                {
+                if ( leftButton )
                     addTapePoint(eventPos);
-                    if ( d->tapeMeasureVec.count() >= 2 )
-                    {
-                        if (KGlobal::locale()->measureSystem() == KLocale::Imperial)
-                            d->messageWindow->display( i18n( "Path length: " ) + QString("%1in").arg( tapeLength()), QString(), PageViewMessage::Info, -1 );
-                        else
-                            d->messageWindow->display( i18n( "Path length: " ) + QString("%1mm").arg( tapeLength() * 25.4 ), QString(), PageViewMessage::Info, -1 );
-                    }
+                else if ( rightButton )
+                    removeTapePoint();
+
+                if ( d->tapeMeasureVec.count() >= 2 )
+                {
+                    if (KGlobal::locale()->measureSystem() == KLocale::Imperial)
+                        d->messageWindow->display( i18n( "Path length: " ) + QString("%1in").arg( tapeLength()), QString(), PageViewMessage::Info, -1 );
+                    else
+                        d->messageWindow->display( i18n( "Path length: " ) + QString("%1mm").arg( tapeLength() * 25.4 ), QString(), PageViewMessage::Info, -1 );
                 }
             }
-            else if ( rightButton )
-	        {
-                kDebug() << "Measure button 2 released" << endl;
-            }
             break;
-
+        }
 
         case Okular::Settings::EnumMouseMode::Zoom:
             // if a selection rect has been defined, zoom into it
@@ -3693,6 +3691,18 @@ void PageView::addTapePoint( const QPoint & pos )
         d->tapeLastCursor = pos;
         updateTape();
     }
+}
+
+void PageView::removeTapePoint()
+{
+    if ( d->tapeMeasureVec.count() >= 2)
+    {
+        d->tapeMeasureVec.pop_back();
+        d->tapeMeasureOnScreen.pop_back();
+    }
+    else
+        resetTape();
+    updateTape();
 }
 
 void PageView::updateTape( const QPoint & pos )

@@ -161,6 +161,7 @@ Q_OBJECT
         void guessTableDividers();
         // tape
         void addTapePoint(const QPoint & pos);
+        void removeTapePoint();
         void updateTape(const QPoint & pos);
         void updateTape();
         void resetTape();
